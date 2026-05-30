@@ -1,6 +1,4 @@
-JSON
 {
-  "version": 2,
   "builds": [
     {
       "src": "main.py",
