@@ -18,72 +18,69 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 supabase: Client = create_client(os.environ.get("SUPABASE_URL"), os.environ.get("SUPABASE_SERVICE_ROLE_KEY"))
 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
-# ฟังก์ชันดึงข้อความจากไฟล์ (เวอร์ชันจำลองเบื้องต้น)
 async def extract_text(file: UploadFile):
     content = await file.read()
     return f"[ข้อมูลถูกดึงมาจากไฟล์อ้างอิง: {file.filename}]"
 
-# ฟังก์ชันสั่ง AI สำหรับแต่ละห้องเรียน (ทำงานแบบคู่ขนาน)
 async def generate_lesson_for_cohort(strand: str, grade: str, rooms: List[str], topic: str, indicators: str, rules: str, ref_text: str, goal: str, detail_level: str):
     room_text = f"ห้อง {', '.join(rooms)}" if rooms else "ทุกห้อง"
     
-    # 💡 กำหนดความลึกของเนื้อหาตามที่คุณครูเลือกจากหน้าเว็บ
-    detail_instruction = ""
-    if detail_level == "ละเอียดมาก":
-        detail_instruction = "เขียนเนื้อหาให้ยาวและมีความละเอียดมากที่สุด (ประมาณ 1,000 - 2,000 คำ) ขยายความทุกประเด็นย่อยอย่างลึกซึ้ง พร้อมยกตัวอย่างประกอบในชีวิตประจำวันให้ชัดเจนและเข้าใจง่าย เพื่อให้นักเรียนสามารถอ่านทำความเข้าใจได้ด้วยตนเองอย่างถ่องแท้"
-    elif detail_level == "สรุปย่อ":
-        detail_instruction = "เขียนเนื้อหาแบบสรุปย่อ กระชับ จับใจความสำคัญ เหมาะสำหรับการทบทวนเนื้อหาอย่างรวดเร็ว"
-    else:
-        detail_instruction = "เขียนเนื้อหาความยาวปานกลาง ครอบคลุมประเด็นสำคัญและมีตัวอย่างประกอบให้เข้าใจง่าย"
+    # บังคับความละเอียดขั้นสุดยอด ตามที่คุณครูต้องการ
+    detail_instruction = """
+    **กฎเหล็กด้านความละเอียด (CRITICAL):**
+    - ต้องสร้างเนื้อหาที่ 'ละเอียดที่สุด ลึกซึ้งที่สุด และยาวที่สุด' (ความยาวเทียบเท่าหนังสือเรียน 1-2 บท หรือประมาณ 2,000-3,000 คำขึ้นไป)
+    - ห้ามตอบแบบสรุปย่อ หรือทำเป็นแค่ Bullet Point สั้นๆ เด็ดขาด
+    - อธิบายขยายความในทุกๆ ประเด็นย่อยอย่างละเอียดถี่ถ้วน ประหนึ่งครูกำลังยืนสอนและอธิบายให้เด็กฟังทีละขั้นตอน
+    - ต้องมีการยกตัวอย่างสถานการณ์จริง, การเปรียบเทียบ (Analogy), หรือเกร็ดความรู้ (Tips/ข้อควรจำ) แทรกในทุกหัวข้อ เพื่อให้นักเรียนอ่านแล้ว 'เข้าใจและเห็นภาพได้ทันที'
+    - ใช้ภาษาที่สละสลวย อ่านสนุก น่าติดตาม แต่วิชาการต้องถูกต้อง 100% ตามหลักสูตรแกนกลางฯ
+    """
     
     prompt = f"""
-    คุณคือคุณครูและผู้เชี่ยวชาญด้านหลักสูตรการศึกษา
-    จงสร้างบทเรียนวิชาสังคมศึกษา ({strand}) สำหรับนักเรียนชั้น {grade} {room_text} โรงเรียนหารเทารังสีประชาสรรค์
+    คุณคือผู้เชี่ยวชาญด้านหลักสูตรแกนกลางการศึกษาขั้นพื้นฐาน พ.ศ. 2551 และเป็นคุณครูระดับเชี่ยวชาญ
+    จงสร้างบทเรียนวิชาสังคมศึกษา ศาสนา และวัฒนธรรม ({strand}) สำหรับนักเรียนชั้น {grade} {room_text}
     
-    หัวข้อ: {topic}
-    ตัวชี้วัด/จุดประสงค์การเรียนรู้: 
+    หัวข้อการเรียนรู้: {topic}
+    มาตรฐานการเรียนรู้และตัวชี้วัด: 
     {indicators}
     
     เป้าหมายความยาก: {goal}
-    ระดับความลึกของเนื้อหา: {detail_instruction}
     
-    ข้อมูลอ้างอิง: {ref_text}
+    ข้อมูลอ้างอิงเพิ่มเติม (ถ้ามี): {ref_text}
+    
+    {detail_instruction}
     
     ข้อกำหนดการสร้างแบบทดสอบ: 
     {rules}
-    **กฎเหล็ก**: ข้อสอบทุกข้อต้องอ้างอิงจากเนื้อหาที่คุณสร้างใน response นี้เท่านั้น เพื่อให้นักเรียนหาคำตอบได้จากบทเรียน
+    (ข้อสอบทุกข้อต้องอ้างอิงจากเนื้อหาที่คุณเพิ่งเขียนอธิบายไปเท่านั้น)
     
-    ตอบกลับมาเป็น JSON Format ตามโครงสร้างนี้เท่านั้น ห้ามมีข้อความอื่นหรือ markdown ปน: 
+    ตอบกลับมาเป็น JSON Format ตามโครงสร้างนี้เท่านั้น ห้ามมีข้อความอื่นหรือ markdown (```json) ปน: 
     {{
         "lesson_title": "ชื่อบทเรียน", 
         "content_blocks": [
             {{
-                "heading": "หัวข้อย่อย", 
-                "body": "เนื้อหาที่อธิบาย..."
+                "heading": "หัวข้อย่อย (แบ่งให้ครอบคลุมทุกมิติ)", 
+                "body": "เนื้อหาที่อธิบายอย่างละเอียดสุดๆ พร้อมยกตัวอย่างประกอบ..."
             }}
         ], 
-        "key_takeaways": ["สรุปประเด็นสำคัญข้อ 1", "สรุปประเด็นสำคัญข้อ 2"], 
+        "key_takeaways": ["สรุปประเด็นสำคัญข้อ 1 แบบละเอียด", "สรุปประเด็นสำคัญข้อ 2 แบบละเอียด"], 
         "quizzes": [
-            {{"type": "mcq", "question": "คำถามปรนัย...", "options": ["ก.", "ข.", "ค.", "ง."], "correct_answer": "ก.", "explain": "คำอธิบายเฉลย..."}},
-            {{"type": "tf", "question": "คำถามถูกผิด...", "options": ["ถูก", "ผิด"], "correct_answer": "ถูก", "explain": "คำอธิบายเฉลย..."}},
-            {{"type": "short", "question": "คำถามเติมคำ...", "correct_answer": "คำตอบที่ถูกต้อง", "explain": "คำอธิบายเฉลย..."}},
-            {{"type": "essay", "question": "คำถามอัตนัยให้แสดงความคิดเห็น...", "grading_criteria": "เกณฑ์การให้คะแนนจาก AI..."}}
+            {{"type": "mcq", "question": "...", "options": ["ก.", "ข.", "ค.", "ง."], "correct_answer": "ก.", "explain": "คำอธิบายเหตุผลอย่างละเอียด..."}},
+            {{"type": "tf", "question": "...", "options": ["ถูก", "ผิด"], "correct_answer": "ถูก", "explain": "..."}},
+            {{"type": "short", "question": "...", "correct_answer": "...", "explain": "..."}},
+            {{"type": "essay", "question": "...", "grading_criteria": "เกณฑ์การให้คะแนนอย่างละเอียด..."}}
         ], 
         "target_rooms": {json.dumps(rooms)}
     }}
     """
     
-    # รัน AI โดยไม่บล็อกระบบ
     response = await asyncio.to_thread(
         client.models.generate_content,
         model="gemini-2.5-flash",
         contents=prompt
     )
-    # ทำความสะอาด JSON ก่อนนำไปใช้
     raw_text = response.text.strip().removeprefix("```json").removesuffix("```").strip()
     return json.loads(raw_text)
 
-# API Endpoint สำหรับรับคำสั่งสร้างเนื้อหา
 @app.post("/api/admin/generate-batch")
 async def generate_batch_lessons(
     teacher_id: str = Form(...),
@@ -93,55 +90,41 @@ async def generate_batch_lessons(
     topic: str = Form(...),
     cohorts_json: str = Form(...), 
     quiz_config_json: str = Form(...),
-    student_settings_json: str = Form("{}"), # รับการตั้งค่าจากหน้าเว็บ
+    student_settings_json: str = Form("{}"), 
     file: Optional[UploadFile] = File(None)
 ):
-    # 1. ตรวจสอบสิทธิ์ (ต้องเป็นคุณครู)
     res = supabase.table("users").select("role").eq("user_id", teacher_id).execute()
     if not res.data or res.data[0].get("role") != "teacher":
         raise HTTPException(status_code=403, detail="ระบบนี้สำหรับคุณครูเท่านั้น")
 
-    # 2. จัดเตรียมข้อมูลจาก Frontend
     indicators = json.loads(indicators_json)
     cohorts = json.loads(cohorts_json)
     quiz_config = json.loads(quiz_config_json)
     student_settings = json.loads(student_settings_json)
     
-    # ดึงค่าระดับความละเอียด (ถ้าไม่มีให้ค่าเริ่มต้นเป็น ปานกลาง)
-    detail_level = student_settings.get("content_detail_level", "ปานกลาง")
-    
-    ref_text = await extract_text(file) if file else "ใช้ความรู้ที่ถูกต้องตามหลักวิชาการ"
+    detail_level = student_settings.get("content_detail_level", "ละเอียดมาก")
+    ref_text = await extract_text(file) if file else "อ้างอิงจากหนังสือเรียนวิชาสังคมศึกษาและหลักสูตรแกนกลางฯ 2551"
     ind_text = "\n".join([f"- {i}" for i in indicators])
     
-    # สรุปจำนวนข้อสอบแต่ละประเภทส่งให้ AI
-    rules = f"- ปรนัย (กขคง) {quiz_config.get('mcq', 0)} ข้อ\n" \
-            f"- ถูก/ผิด (True/False) {quiz_config.get('tf', 0)} ข้อ\n" \
-            f"- เติมคำสั้นๆ (Short Answer) {quiz_config.get('short', 0)} ข้อ\n" \
-            f"- อัตนัย (เขียนตอบ) {quiz_config.get('essay', 0)} ข้อ"
+    rules = f"- ปรนัย (4 ตัวเลือก) {quiz_config.get('mcq', 0)} ข้อ\n" \
+            f"- ถูก/ผิด {quiz_config.get('tf', 0)} ข้อ\n" \
+            f"- เติมคำสั้นๆ {quiz_config.get('short', 0)} ข้อ\n" \
+            f"- อัตนัย (เขียนตอบยาว) {quiz_config.get('essay', 0)} ข้อ"
 
-    # 3. ส่งคำสั่งประมวลผลพร้อมกันหลายห้อง
     tasks = []
     for cohort in cohorts:
         task = generate_lesson_for_cohort(
-            strand=strand,
-            grade=grade_level, 
-            rooms=cohort["rooms"], 
-            topic=topic, 
-            indicators=ind_text, 
-            rules=rules, 
-            ref_text=ref_text, 
-            goal=cohort["goal"],
-            detail_level=detail_level
+            strand=strand, grade=grade_level, rooms=cohort["rooms"], 
+            topic=topic, indicators=ind_text, rules=rules, 
+            ref_text=ref_text, goal=cohort["goal"], detail_level=detail_level
         )
         tasks.append(task)
     
     results = await asyncio.gather(*tasks)
 
-    # Note: อนาคตสามารถนำ results และ student_settings บันทึกลง Supabase ได้ตรงนี้
-
     return {
         "status": "success",
-        "message": f"สร้างเนื้อหาสำเร็จสำหรับ {len(results)} กลุ่มเป้าหมาย",
-        "student_settings_saved": student_settings, # ส่งค่า settings กลับไปให้หน้าเว็บดูด้วย
+        "message": f"สร้างเนื้อหาสำเร็จสำหรับ {len(results)} กลุ่ม",
+        "student_settings_saved": student_settings,
         "data": results
     }
