@@ -8,46 +8,41 @@ from supabase import create_client, Client
 from google import genai
 from dotenv import load_dotenv
 
-# โหลดค่าความลับจากไฟล์ .env
 load_dotenv()
 
 app = FastAPI(title="EdTech AI Backend")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
-# เชื่อมต่อฐานข้อมูลและ AI
 supabase: Client = create_client(os.environ.get("SUPABASE_URL"), os.environ.get("SUPABASE_SERVICE_ROLE_KEY"))
 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
 async def extract_text(file: UploadFile):
     content = await file.read()
-    return f"[ข้อมูลถูกดึงมาจากไฟล์อ้างอิง: {file.filename}]"
+    return f"[ข้อมูลอ้างอิง: {file.filename}]"
 
 async def generate_lesson_for_cohort(strand: str, grade: str, rooms: List[str], topic: str, indicators: str, rules: str, ref_text: str, goal: str, detail_level: str):
     
-    # 💡 ปรับปรุงคำสั่งบังคับ AI: ให้แบ่งเนื้อหาเป็นหน้าๆ (Pages)
+    # 💡 กฎเหล็ก: ห้ามใช้ Markdown และเขียนให้ยาวที่สุด
     detail_instruction = f"""
-    **กฎเหล็กด้านเนื้อหาและรูปแบบ (CRITICAL):**
-    1. **ห้ามระบุชื่อห้อง:** ในการเขียนทักทาย ห้ามระบุชื่อห้อง (เช่น ห้อง 1, 2) เด็ดขาด ให้ระบุแค่ระดับชั้น เช่น "สวัสดีนักเรียนชั้น {grade} ทุกคน"
-    2. **ความละเอียดขั้นสุดยอด:** เนื้อหาต้องลึกซึ้ง ละเอียด และมีปริมาณมาก (2,000-3,000 คำ) ขยายความทุกประเด็นย่อย พร้อมยกตัวอย่างสถานการณ์จริงให้เข้าใจง่าย
-    3. **การแบ่งหน้า (Pagination):** คุณต้องแบ่งเนื้อหาทั้งหมดออกเป็น "หน้าย่อยๆ (Pages)" อย่างน้อย 4-6 หน้า เพื่อให้นักเรียนกดปุ่มอ่าน "หน้าถัดไป" ทีละหน้าได้โดยไม่ตาลาย
+    **กฎเหล็กด้านเนื้อหาและรูปแบบ (CRITICAL - บังคับใช้อย่างเคร่งครัด):**
+    1. **ห้ามใช้เครื่องหมาย Markdown เด็ดขาด:** ห้ามพิมพ์เครื่องหมายดอกจัน (*) สำหรับตัวหนาหรือตัวเอียง ห้ามใช้เครื่องหมาย (#) หรืออักษรแปลกๆ ให้พิมพ์เป็น "ข้อความธรรมดา (Plain Text)" หรือใช้การเว้นวรรค/ย่อหน้าปกติเท่านั้น
+    2. **ห้ามระบุชื่อห้อง:** ในการทักทาย ให้ระบุแค่ระดับชั้น เช่น "สวัสดีนักเรียนชั้น {grade} ทุกคน" ห้ามมีคำว่า ห้อง 1, ห้อง 2
+    3. **ความละเอียดขั้นสุดยอด:** สร้างเนื้อหาที่ยาวและลึกซึ้งที่สุด (ประมาณ 2,000-3,000 คำ) ขยายความทุกประเด็นย่อย พร้อมยกตัวอย่างสถานการณ์จริง
+    4. **การแบ่งหน้า (Pagination):** แบ่งเนื้อหาออกเป็นหน้าย่อยๆ 4-6 หน้า (Pages) ให้นักเรียนค่อยๆ อ่านทีละหน้า
     """
     
     prompt = f"""
-    คุณคือผู้เชี่ยวชาญด้านหลักสูตรแกนกลางการศึกษาขั้นพื้นฐาน พ.ศ. 2551 และเป็นคุณครูระดับเชี่ยวชาญ
-    จงสร้างบทเรียนวิชาสังคมศึกษา ศาสนา และวัฒนธรรม ({strand}) สำหรับนักเรียนชั้น {grade}
+    คุณคือผู้เชี่ยวชาญด้านหลักสูตรแกนกลางการศึกษาขั้นพื้นฐาน พ.ศ. 2551
+    จงสร้างบทเรียนวิชาสังคมศึกษา ({strand}) สำหรับนักเรียนชั้น {grade}
     
-    หัวข้อการเรียนรู้: {topic}
-    ตัวชี้วัด: 
-    {indicators}
-    
-    เป้าหมายความยาก: {goal}
-    ข้อมูลอ้างอิงเพิ่มเติม: {ref_text}
+    หัวข้อ: {topic}
+    ตัวชี้วัด: {indicators}
+    ข้อมูลอ้างอิง: {ref_text}
     
     {detail_instruction}
     
     ข้อกำหนดการสร้างแบบทดสอบ: 
     {rules}
-    (ข้อสอบทุกข้อต้องอ้างอิงจากเนื้อหาที่คุณเพิ่งเขียนอธิบายไปเท่านั้น)
     
     ตอบกลับมาเป็น JSON Format ตามโครงสร้างนี้เท่านั้น ห้ามมีข้อความอื่นปน: 
     {{
@@ -55,8 +50,8 @@ async def generate_lesson_for_cohort(strand: str, grade: str, rooms: List[str], 
         "pages": [
             {{
                 "page_number": 1,
-                "heading": "หัวข้อของหน้านี้", 
-                "body": "เนื้อหาที่อธิบายอย่างละเอียดสุดๆ (รองรับการใช้ย่อหน้าและ Bullet)..."
+                "heading": "หัวข้อของหน้านี้ (ห้ามใช้ *)", 
+                "body": "เนื้อหาที่อธิบายอย่างละเอียดสุดๆ (ห้ามใช้เครื่องหมาย * หรือ # เด็ดขาด ให้ใช้ข้อความธรรมดา)..."
             }},
             {{
                 "page_number": 2,
@@ -64,14 +59,13 @@ async def generate_lesson_for_cohort(strand: str, grade: str, rooms: List[str], 
                 "body": "..."
             }}
         ], 
-        "key_takeaways": ["สรุปประเด็นสำคัญข้อ 1", "สรุปประเด็นสำคัญข้อ 2"], 
+        "key_takeaways": ["สรุปประเด็น 1", "สรุปประเด็น 2"], 
         "quizzes": [
-            {{"type": "mcq", "question": "...", "options": ["ก.", "ข.", "ค.", "ง."], "correct_answer": "ก.", "explain": "คำอธิบายเฉลย..."}},
+            {{"type": "mcq", "question": "...", "options": ["ก.", "ข.", "ค.", "ง."], "correct_answer": "ก.", "explain": "..."}},
             {{"type": "tf", "question": "...", "options": ["ถูก", "ผิด"], "correct_answer": "ถูก", "explain": "..."}},
             {{"type": "short", "question": "...", "correct_answer": "...", "explain": "..."}},
-            {{"type": "essay", "question": "...", "grading_criteria": "เกณฑ์การให้คะแนนอย่างละเอียด..."}}
-        ], 
-        "target_rooms": {json.dumps(rooms)}
+            {{"type": "essay", "question": "...", "grading_criteria": "..."}}
+        ]
     }}
     """
     
@@ -93,6 +87,8 @@ async def generate_batch_lessons(
     cohorts_json: str = Form(...), 
     quiz_config_json: str = Form(...),
     student_settings_json: str = Form("{}"), 
+    start_date: str = Form(""), # เพิ่มรับค่าวางแผนเวลา
+    end_date: str = Form(""),
     file: Optional[UploadFile] = File(None)
 ):
     res = supabase.table("users").select("role").eq("user_id", teacher_id).execute()
@@ -108,10 +104,7 @@ async def generate_batch_lessons(
     ref_text = await extract_text(file) if file else "อ้างอิงเนื้อหาจากหลักสูตรแกนกลางฯ 2551"
     ind_text = "\n".join([f"- {i}" for i in indicators])
     
-    rules = f"- ปรนัย (4 ตัวเลือก) {quiz_config.get('mcq', 0)} ข้อ\n" \
-            f"- ถูก/ผิด {quiz_config.get('tf', 0)} ข้อ\n" \
-            f"- เติมคำสั้นๆ {quiz_config.get('short', 0)} ข้อ\n" \
-            f"- อัตนัย (เขียนตอบยาว) {quiz_config.get('essay', 0)} ข้อ"
+    rules = f"- ปรนัย {quiz_config.get('mcq', 0)} ข้อ\n- ถูก/ผิด {quiz_config.get('tf', 0)} ข้อ\n- เติมคำ {quiz_config.get('short', 0)} ข้อ\n- อัตนัย {quiz_config.get('essay', 0)} ข้อ"
 
     tasks = []
     for cohort in cohorts:
@@ -124,9 +117,11 @@ async def generate_batch_lessons(
     
     results = await asyncio.gather(*tasks)
 
+    # ส่งกลับข้อมูลทั้งหมดรวมถึงเวลาเปิด-ปิด
     return {
         "status": "success",
         "message": f"สร้างเนื้อหาสำเร็จ",
+        "schedule": { "start_date": start_date, "end_date": end_date },
         "student_settings_saved": student_settings,
         "data": results
     }
